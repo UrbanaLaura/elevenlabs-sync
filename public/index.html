@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ElevenLabs Migration Dashboard</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3350;
+    --text: #e8eaf0;
+    --text-muted: #6b7280;
+    --text-dim: #9ca3af;
+
+    --green:  #10b981;
+    --green-bg: rgba(16,185,129,.12);
+    --orange: #f59e0b;
+    --orange-bg: rgba(245,158,11,.12);
+    --yellow: #eab308;
+    --yellow-bg: rgba(234,179,8,.12);
+    --red:    #ef4444;
+    --red-bg: rgba(239,68,68,.12);
+    --purple: #8b5cf6;
+    --purple-bg: rgba(139,92,246,.12);
+    --blue:   #3b82f6;
+    --blue-bg: rgba(59,130,246,.12);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  /* ── Layout ── */
+  .header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 20px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header h1 { font-size: 18px; font-weight: 600; letter-spacing: -.3px; }
+  .header h1 span { color: var(--text-muted); font-weight: 400; }
+  .timestamp { font-size: 12px; color: var(--text-muted); }
+
+  .main { padding: 28px 32px; max-width: 1400px; margin: 0 auto; }
+
+  /* ── Stats ── */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+  .stat {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 20px;
+    cursor: pointer;
+    transition: border-color .15s, transform .1s;
+    user-select: none;
+  }
+  .stat:hover { transform: translateY(-1px); }
+  .stat.active { border-color: var(--accent); background: var(--accent-bg); }
+  .stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--text-muted); margin-bottom: 6px; }
+  .stat-number { font-size: 32px; font-weight: 700; line-height: 1; }
+  .stat-sub { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+  .stat-identical  { --accent: var(--green);  --accent-bg: var(--green-bg); }
+  .stat-diffs      { --accent: var(--orange); --accent-bg: var(--orange-bg); }
+  .stat-possible   { --accent: var(--yellow); --accent-bg: var(--yellow-bg); }
+  .stat-missing    { --accent: var(--red);    --accent-bg: var(--red-bg); }
+  .stat-eu-only    { --accent: var(--purple); --accent-bg: var(--purple-bg); }
+
+  .stat-identical .stat-number  { color: var(--green); }
+  .stat-diffs .stat-number      { color: var(--orange); }
+  .stat-possible .stat-number   { color: var(--yellow); }
+  .stat-missing .stat-number    { color: var(--red); }
+  .stat-eu-only .stat-number    { color: var(--purple); }
+
+  /* ── Search & filter bar ── */
+  .toolbar {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+    align-items: center;
+  }
+  .search-wrap { position: relative; flex: 1; max-width: 360px; }
+  .search-wrap svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
+  .search {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px 8px 36px;
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+    transition: border-color .15s;
+  }
+  .search:focus { border-color: var(--blue); }
+  .count-badge {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--text-muted);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px 12px;
+  }
+
+  /* ── Agent list ── */
+  #agent-list { display: flex; flex-direction: column; gap: 8px; }
+
+  /* ── Agent card ── */
+  .agent-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: border-color .15s;
+  }
+  .agent-card:hover { border-color: var(--card-accent); }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .status-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--card-accent);
+    box-shadow: 0 0 6px var(--card-accent);
+  }
+
+  .card-names { flex: 1; min-width: 0; }
+  .card-name-usa { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-name-eu  { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+
+  .badge {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    padding: 3px 9px;
+    border-radius: 20px;
+    background: var(--accent-bg);
+    color: var(--card-accent);
+    flex-shrink: 0;
+  }
+
+  .diff-count {
+    font-size: 12px;
+    color: var(--text-muted);
+    background: var(--surface2);
+    border-radius: 6px;
+    padding: 2px 8px;
+    flex-shrink: 0;
+  }
+  .diff-count b { color: var(--orange); }
+
+  .sim-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .sim-bar-track {
+    width: 64px; height: 5px;
+    background: var(--surface2);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .sim-bar-fill { height: 100%; background: var(--yellow); border-radius: 3px; }
+  .sim-pct { font-size: 11px; color: var(--yellow); width: 32px; text-align: right; }
+
+  .chevron { color: var(--text-muted); transition: transform .2s; flex-shrink: 0; }
+  .agent-card.open .chevron { transform: rotate(180deg); }
+
+  /* ── Diff panel ── */
+  .diff-panel {
+    display: none;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .agent-card.open .diff-panel { display: block; }
+
+  /* Field comparison rows */
+  .field-list { display: flex; flex-direction: column; }
+
+  .field-row {
+    display: grid;
+    grid-template-columns: 140px 1fr 1fr;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    min-height: 40px;
+  }
+  .field-row:last-child { border-bottom: none; }
+  .field-row.has-diff { background: rgba(245,158,11,.04); }
+  .field-row.identical { background: rgba(16,185,129,.03); }
+
+  .field-label {
+    padding: 10px 14px;
+    border-right: 1px solid var(--border);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .6px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding-top: 12px;
+  }
+  .field-label .dot {
+    width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; margin-top: 1px;
+  }
+  .dot-ok   { background: var(--green); }
+  .dot-diff { background: var(--orange); box-shadow: 0 0 4px var(--orange); }
+
+  .field-val {
+    padding: 10px 16px;
+    border-right: 1px solid var(--border);
+    line-height: 1.5;
+    word-break: break-word;
+  }
+  .field-val:last-child { border-right: none; }
+
+  .col-header {
+    display: grid;
+    grid-template-columns: 140px 1fr 1fr;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .7px;
+    color: var(--text-muted);
+  }
+  .col-header div { padding: 8px 14px; border-right: 1px solid var(--border); }
+  .col-header div:last-child { border-right: none; }
+
+  .val-text { color: var(--text); }
+  .val-diff-usa { color: #f87171; }
+  .val-diff-eu  { color: #34d399; }
+  .val-null { color: var(--text-muted); font-style: italic; }
+  .val-bool-yes { color: var(--green); font-weight: 600; }
+  .val-bool-no  { color: var(--text-muted); }
+
+  .val-prompt {
+    font-size: 11px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    white-space: pre-wrap;
+    max-height: 200px;
+    overflow-y: auto;
+    background: var(--surface2);
+    border-radius: 6px;
+    padding: 8px 10px;
+    scrollbar-width: thin;
+  }
+  .val-voice {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 12px;
+  }
+
+  .no-diffs { padding: 18px 16px; color: var(--green); font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  .ids-row {
+    display: flex;
+    gap: 24px;
+    padding: 10px 14px;
+    background: var(--surface2);
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--text-muted);
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .ids-row span b { color: var(--text-dim); font-family: monospace; }
+
+  .confirm-btn {
+    margin-left: auto;
+    background: var(--yellow-bg);
+    border: 1px solid var(--yellow);
+    color: var(--yellow);
+    border-radius: 7px;
+    padding: 5px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s, color .15s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .confirm-btn:hover { background: var(--yellow); color: #000; }
+  .confirm-btn:disabled { opacity: .5; cursor: not-allowed; }
+  .confirm-btn.confirming { opacity: .7; }
+  .confirm-btn.confirmed-ok {
+    background: var(--green-bg); border-color: var(--green); color: var(--green);
+    cursor: default;
+  }
+
+  /* Status colours */
+  .status-identical { --card-accent: var(--green);  --accent-bg: var(--green-bg); }
+  .status-diffs     { --card-accent: var(--orange); --accent-bg: var(--orange-bg); }
+  .status-possible  { --card-accent: var(--yellow); --accent-bg: var(--yellow-bg); }
+  .status-missing   { --card-accent: var(--red);    --accent-bg: var(--red-bg); }
+  .status-eu-only   { --card-accent: var(--purple); --accent-bg: var(--purple-bg); }
+
+  /* EU-only compact list */
+  .eu-only-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 8px;
+  }
+  .eu-only-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--purple);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13px;
+  }
+  .eu-only-card .eu-id { font-size: 10px; font-family: monospace; color: var(--text-muted); margin-top: 3px; }
+
+  /* Empty state */
+  .empty { text-align: center; padding: 60px 20px; color: var(--text-muted); font-size: 14px; }
+
+  /* Loading */
+  .loading { text-align: center; padding: 80px 20px; color: var(--text-muted); }
+  .spinner {
+    width: 32px; height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--blue);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+    margin: 0 auto 16px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .section-title {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .7px;
+    color: var(--text-muted);
+    padding: 4px 0 12px;
+  }
+
+  .expand-all-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 7px;
+    padding: 5px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: border-color .15s, color .15s;
+  }
+  .expand-all-btn:hover { border-color: var(--blue); color: var(--blue); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>ElevenLabs Migration <span>USA → EU</span></h1>
+  <div class="timestamp" id="ts">Loading...</div>
+</div>
+
+<div class="main">
+  <div id="app">
+    <div class="loading">
+      <div class="spinner"></div>
+      Loading migration data...
+    </div>
+  </div>
+</div>
+
+<script>
+let allData = null;
+let activeFilter = 'all';
+let searchQuery = '';
+
+// ── Fetch data ────────────────────────────────────────────────────────────────
+async function init() {
+  const res = await fetch('/api/data');
+  const json = await res.json();
+  if (json.error) {
+    document.getElementById('app').innerHTML = `<div class="empty">Error: ${json.error}</div>`;
+    return;
+  }
+  allData = json;
+  document.getElementById('ts').textContent = `Last sync: ${json.timestamp}`;
+  render();
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function statusMeta(status) {
+  return {
+    MIGRATED_IDENTICAL: { label: 'Identical',      cls: 'identical', badge: 'OK' },
+    MIGRATED_WITH_DIFFS:{ label: 'Has differences', cls: 'diffs',    badge: 'Diffs' },
+    POSSIBLE_MATCH:     { label: 'Possible match',  cls: 'possible', badge: 'Review' },
+    NOT_MIGRATED:       { label: 'Not migrated',    cls: 'missing',  badge: 'Missing' },
+    EU_ONLY:            { label: 'EU only',          cls: 'eu-only',  badge: 'EU Only' },
+  }[status] ?? { label: status, cls: '', badge: status };
+}
+
+function fmtVal(v) {
+  if (v === undefined || v === null) return '<span class="null-val">—</span>';
+  if (typeof v === 'object') return JSON.stringify(v, null, 0).slice(0, 300);
+  if (typeof v === 'string' && v.length > 200) return v.slice(0, 200) + '…';
+  return String(v);
+}
+
+function escHtml(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Build combined list ───────────────────────────────────────────────────────
+function buildRows() {
+  const { usa_to_eu, eu_only } = allData.map;
+  const rows = [
+    ...usa_to_eu,
+    ...eu_only.map(a => ({ status: 'EU_ONLY', eu_name: a.name, eu_agent_id: a.agent_id })),
+  ];
+  return rows;
+}
+
+function filterRows(rows) {
+  let filtered = rows;
+
+  if (activeFilter !== 'all') {
+    filtered = filtered.filter(r => {
+      if (activeFilter === 'identical') return r.status === 'MIGRATED_IDENTICAL';
+      if (activeFilter === 'diffs')     return r.status === 'MIGRATED_WITH_DIFFS';
+      if (activeFilter === 'possible')  return r.status === 'POSSIBLE_MATCH';
+      if (activeFilter === 'missing')   return r.status === 'NOT_MIGRATED';
+      if (activeFilter === 'eu-only')   return r.status === 'EU_ONLY';
+      return true;
+    });
+  }
+
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    filtered = filtered.filter(r =>
+      (r.usa_name ?? '').toLowerCase().includes(q) ||
+      (r.eu_name  ?? '').toLowerCase().includes(q)
+    );
+  }
+
+  return filtered;
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function render() {
+  const rows = buildRows();
+  const counts = {
+    all:      rows.length,
+    identical: rows.filter(r => r.status === 'MIGRATED_IDENTICAL').length,
+    diffs:    rows.filter(r => r.status === 'MIGRATED_WITH_DIFFS').length,
+    possible: rows.filter(r => r.status === 'POSSIBLE_MATCH').length,
+    missing:  rows.filter(r => r.status === 'NOT_MIGRATED').length,
+    'eu-only':rows.filter(r => r.status === 'EU_ONLY').length,
+  };
+
+  const filtered = filterRows(rows);
+
+  document.getElementById('app').innerHTML = `
+    ${renderStats(counts)}
+    <div class="toolbar">
+      <div class="search-wrap">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+        </svg>
+        <input class="search" type="text" placeholder="Search agents…" value="${escHtml(searchQuery)}" oninput="onSearch(this.value)">
+      </div>
+      <button class="expand-all-btn" onclick="toggleAll()">Expand all</button>
+      <div class="count-badge">${filtered.length} agents</div>
+    </div>
+    <div id="agent-list">${renderList(filtered)}</div>
+  `;
+}
+
+function renderStats(counts) {
+  const stats = [
+    { key: 'identical', cls: 'stat-identical', label: 'Identical',       sub: 'Migrated, no diffs' },
+    { key: 'diffs',     cls: 'stat-diffs',     label: 'Has differences', sub: 'Migrated but diverged' },
+    { key: 'possible',  cls: 'stat-possible',  label: 'Review needed',   sub: 'Fuzzy name match' },
+    { key: 'missing',   cls: 'stat-missing',   label: 'Not migrated',    sub: 'Only in USA' },
+    { key: 'eu-only',   cls: 'stat-eu-only',   label: 'EU only',         sub: 'No source in USA' },
+  ];
+  return `<div class="stats">${stats.map(s => `
+    <div class="stat ${s.cls} ${activeFilter === s.key ? 'active' : ''}" onclick="setFilter('${s.key}')">
+      <div class="stat-label">${s.label}</div>
+      <div class="stat-number">${counts[s.key]}</div>
+      <div class="stat-sub">${s.sub}</div>
+    </div>`).join('')}</div>`;
+}
+
+function renderList(rows) {
+  if (!rows.length) return '<div class="empty">No agents match this filter.</div>';
+  return rows.map((row, i) => renderCard(row, i)).join('');
+}
+
+function renderCard(row, i) {
+  const meta = statusMeta(row.status);
+
+  if (row.status === 'EU_ONLY') {
+    return `
+    <div class="agent-card status-eu-only">
+      <div class="card-header">
+        <div class="status-dot"></div>
+        <div class="card-names">
+          <div class="card-name-usa">${escHtml(row.eu_name)}</div>
+          <div class="card-name-eu">Only exists in EU workspace</div>
+        </div>
+        <span class="badge">${meta.badge}</span>
+      </div>
+      <div class="ids-row">
+        <span>EU ID: <b>${escHtml(row.eu_agent_id)}</b></span>
+      </div>
+    </div>`;
+  }
+
+  if (row.status === 'NOT_MIGRATED') {
+    return `
+    <div class="agent-card status-missing">
+      <div class="card-header">
+        <div class="status-dot"></div>
+        <div class="card-names">
+          <div class="card-name-usa">${escHtml(row.usa_name)}</div>
+          <div class="card-name-eu">Not found in EU workspace</div>
+        </div>
+        <span class="badge">${meta.badge}</span>
+      </div>
+      <div class="ids-row">
+        <span>USA ID: <b>${escHtml(row.usa_agent_id)}</b></span>
+      </div>
+    </div>`;
+  }
+
+  const hasDiffs = row.diffs && row.diffs.length > 0;
+  const simBar = row.status === 'POSSIBLE_MATCH' ? `
+    <div class="sim-bar">
+      <div class="sim-bar-track"><div class="sim-bar-fill" style="width:${row.similarity_score * 100}%"></div></div>
+      <span class="sim-pct">${Math.round(row.similarity_score * 100)}%</span>
+    </div>` : '';
+
+  const diffCountEl = hasDiffs
+    ? `<div class="diff-count"><b>${row.diffs.length}</b> diff${row.diffs.length !== 1 ? 's' : ''}</div>`
+    : '';
+
+  const euNameLine = row.eu_name !== row.usa_name
+    ? `<div class="card-name-eu">EU: ${escHtml(row.eu_name)}</div>`
+    : `<div class="card-name-eu" style="color:var(--green);font-size:11px;">Name matches</div>`;
+
+  return `
+  <div class="agent-card status-${meta.cls}" id="card-${i}">
+    <div class="card-header" onclick="toggleCard(${i})">
+      <div class="status-dot"></div>
+      <div class="card-names">
+        <div class="card-name-usa">${escHtml(row.usa_name)}</div>
+        ${euNameLine}
+      </div>
+      ${simBar}
+      ${diffCountEl}
+      <span class="badge">${meta.badge}</span>
+      <svg class="chevron" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path d="m6 9 6 6 6-6"/>
+      </svg>
+    </div>
+    <div class="diff-panel">
+      ${renderDiffPanel(row)}
+    </div>
+  </div>`;
+}
+
+const FIELD_LABELS = {
+  name:              'Name',
+  system_prompt:     'System prompt',
+  first_message:     'First message',
+  voice_id:          'Voice ID',
+  widget_customized: 'Widget',
+};
+
+const FIELDS = ['name', 'system_prompt', 'first_message', 'voice_id', 'widget_customized'];
+
+function renderDiffPanel(row) {
+  const confirmBtn = row.status === 'POSSIBLE_MATCH' ? `
+    <button class="confirm-btn" id="confirm-${escHtml(row.usa_agent_id)}"
+      onclick="confirmMatch('${escHtml(row.usa_agent_id)}','${escHtml(row.eu_agent_id)}','${escHtml(row.usa_name)}','${escHtml(row.eu_name)}')">
+      <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+        <path d="M20 6 9 17l-5-5"/>
+      </svg>
+      Confirm: same agent
+    </button>` : '';
+
+  const ids = `
+    <div class="ids-row">
+      <span>USA ID: <b>${escHtml(row.usa_agent_id)}</b></span>
+      ${row.eu_agent_id ? `<span>EU ID: <b>${escHtml(row.eu_agent_id)}</b></span>` : ''}
+      ${row.similarity_score ? `<span>Name similarity: <b style="color:var(--yellow)">${Math.round(row.similarity_score * 100)}%</b></span>` : ''}
+      ${confirmBtn}
+    </div>`;
+
+  const diffSet = new Set(row.diff_fields ?? []);
+  const usaCfg  = row.usa_config ?? {};
+  const euCfg   = row.eu_config  ?? {};
+
+  if (diffSet.size === 0 && !Object.keys(usaCfg).length) {
+    return `<div class="no-diffs"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> All fields are identical</div>${ids}`;
+  }
+
+  const fieldRows = FIELDS.map(field => {
+    const hasDiff = diffSet.has(field);
+    const usaVal  = usaCfg[field];
+    const euVal   = euCfg[field];
+
+    return `
+    <div class="field-row ${hasDiff ? 'has-diff' : 'identical'}">
+      <div class="field-label">
+        <div class="dot ${hasDiff ? 'dot-diff' : 'dot-ok'}"></div>
+        ${FIELD_LABELS[field] ?? field}
+        ${hasDiff ? '<span style="font-size:9px;background:var(--orange);color:#000;border-radius:3px;padding:1px 4px;margin-left:2px;letter-spacing:.3px;">DIFF</span>' : ''}
+      </div>
+      <div class="field-val">${renderVal(field, usaVal, hasDiff, 'usa')}</div>
+      <div class="field-val">${renderVal(field, euVal,  hasDiff, 'eu')}</div>
+    </div>`;
+  }).join('');
+
+  return `
+    <div class="col-header">
+      <div></div>
+      <div>USA</div>
+      <div>EU</div>
+    </div>
+    <div class="field-list">${fieldRows}</div>
+    ${ids}`;
+}
+
+function renderVal(field, val, hasDiff, side) {
+  if (val === null || val === undefined) return `<span class="val-null">—</span>`;
+
+  const cls = hasDiff ? (side === 'usa' ? 'val-diff-usa' : 'val-diff-eu') : 'val-text';
+
+  if (field === 'widget_customized') {
+    return val
+      ? `<span class="val-bool-yes">Yes — customized</span>`
+      : `<span class="val-bool-no">No customization</span>`;
+  }
+  if (field === 'system_prompt') {
+    const text = escHtml(String(val ?? ''));
+    return `<div class="val-prompt ${cls}">${text}</div>`;
+  }
+  if (field === 'voice_id') {
+    return `<span class="val-voice ${cls}">${escHtml(String(val))}</span>`;
+  }
+  return `<span class="${cls}">${escHtml(String(val))}</span>`;
+}
+
+// ── Interactions ──────────────────────────────────────────────────────────────
+function toggleCard(i) {
+  document.getElementById(`card-${i}`)?.classList.toggle('open');
+}
+
+let allExpanded = false;
+function toggleAll() {
+  allExpanded = !allExpanded;
+  document.querySelectorAll('.agent-card').forEach(c => {
+    c.classList.toggle('open', allExpanded);
+  });
+  document.querySelector('.expand-all-btn').textContent = allExpanded ? 'Collapse all' : 'Expand all';
+}
+
+function setFilter(key) {
+  activeFilter = activeFilter === key ? 'all' : key;
+  render();
+}
+
+function onSearch(val) {
+  searchQuery = val;
+  render();
+}
+
+async function confirmMatch(usaId, euId, usaName, euName) {
+  const btn = document.getElementById(`confirm-${usaId}`);
+  if (!btn || btn.disabled) return;
+
+  btn.disabled = true;
+  btn.classList.add('confirming');
+  btn.innerHTML = `<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="animation:spin .6s linear infinite"><path d="M12 2a10 10 0 0 1 0 20"/></svg> Saving…`;
+
+  try {
+    const res = await fetch('/api/confirm-match', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usa_agent_id: usaId, eu_agent_id: euId, usa_name: usaName, eu_name: euName }),
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+
+    // Update in-place: change status in allData and re-render
+    const row = allData.map.usa_to_eu.find(r => r.usa_agent_id === usaId);
+    if (row) {
+      row.status = row.diff_fields && row.diff_fields.length > 0 ? 'MIGRATED_WITH_DIFFS' : 'MIGRATED_IDENTICAL';
+      delete row.similarity_score;
+    }
+    render();
+  } catch (e) {
+    btn.disabled = false;
+    btn.classList.remove('confirming');
+    btn.innerHTML = `Confirm: same agent`;
+    alert('Error saving: ' + e.message);
+  }
+}
+
+init();
+</script>
+</body>
+</html>
