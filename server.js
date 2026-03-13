@@ -61,6 +61,21 @@ const server = createServer(async (req, res) => {
       // Update docs/data.json for GitHub Pages (includes timestamp)
       writeFileSync(DOCS_DATA, JSON.stringify({ map, timestamp }));
       console.log(`[resync] Updated ${DOCS_DATA}`);
+      // Auto-push docs/data.json to GitHub Pages
+      try {
+        await new Promise((resolve, reject) => {
+          execFile('git', ['add', 'docs/data.json'], { cwd: __dirname }, (err) => err ? reject(err) : resolve());
+        });
+        await new Promise((resolve, reject) => {
+          execFile('git', ['commit', '-m', `Update sync data ${timestamp}`], { cwd: __dirname }, (err) => err ? reject(err) : resolve());
+        });
+        await new Promise((resolve, reject) => {
+          execFile('git', ['push'], { cwd: __dirname, timeout: 30_000 }, (err) => err ? reject(err) : resolve());
+        });
+        console.log(`[resync] Pushed docs/data.json to GitHub`);
+      } catch (pushErr) {
+        console.error(`[resync] Git push failed: ${pushErr.message}`);
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ map, timestamp, mapFile, usaFile, euFile }));
     } catch (e) {
