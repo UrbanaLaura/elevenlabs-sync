@@ -1,11 +1,12 @@
 import { createServer } from 'http';
-import { readFileSync, writeFileSync, readdirSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, readdirSync, existsSync, copyFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { execFile } from 'child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = 3033;
+const DOCS_DATA = join(__dirname, 'docs', 'data.json');
 
 function latestFile(dir, prefix) {
   const files = readdirSync(dir)
@@ -57,6 +58,9 @@ const server = createServer(async (req, res) => {
       const euFile   = latestFile(outputDir, 'eu_inventory_');
       const map      = JSON.parse(readFileSync(mapFile, 'utf8'));
       const timestamp = mapFile.match(/(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})/)?.[1]?.replace('T', ' ').replace(/-/g, (m, o) => o > 10 ? ':' : '-') ?? '';
+      // Update docs/data.json for GitHub Pages (includes timestamp)
+      writeFileSync(DOCS_DATA, JSON.stringify({ map, timestamp }));
+      console.log(`[resync] Updated ${DOCS_DATA}`);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ map, timestamp, mapFile, usaFile, euFile }));
     } catch (e) {

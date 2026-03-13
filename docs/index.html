@@ -404,9 +404,12 @@ let searchQuery = '';
 async function init() {
   try {
     const res = await fetch('data.json');
-    const map = await res.json();
-    allData = { map, timestamp: '2026-03-09 15:28' };
-    document.getElementById('ts').textContent = `Last sync: ${allData.timestamp}`;
+    const json = await res.json();
+    // Support both formats: { map, timestamp } or raw map object
+    const map = json.map ?? json;
+    const timestamp = json.timestamp ?? 'unknown';
+    allData = { map, timestamp };
+    document.getElementById('ts').textContent = `Last sync: ${timestamp}`;
     render();
   } catch (e) {
     document.getElementById('app').innerHTML = `<div class="empty">Error loading data: ${e.message}</div>`;
