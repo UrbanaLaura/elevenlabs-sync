@@ -1,1 +1,9 @@
-[]
+[
+  {
+    "usa_agent_id": "agent_2801kgq91k1fe9krf0tt8dn8rjg0",
+    "eu_agent_id": "agent_9901kjdejshve8bts3wktmgy8t9f",
+    "usa_name": "TotalEnergies",
+    "eu_name": "Total Energies",
+    "confirmed_at": "2026-03-09T15:38:09.072Z"
+  }
+]

@@ -2,6 +2,7 @@ import { createServer } from 'http';
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { execFile } from 'child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = 3033;
@@ -37,6 +38,33 @@ function readBody(req) {
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
+
+  // ── POST /api/resync ───────────────────────────────────────────────────────
+  if (url.pathname === '/api/resync' && req.method === 'POST') {
+    try {
+      await new Promise((resolve, reject) => {
+        execFile(process.execPath, [join(__dirname, 'sync.js')], { cwd: __dirname, timeout: 120_000 }, (err, stdout, stderr) => {
+          if (stdout) console.log(stdout);
+          if (stderr) console.error(stderr);
+          if (err) return reject(err);
+          resolve();
+        });
+      });
+      // Return fresh data after sync
+      const outputDir = join(__dirname, 'output');
+      const mapFile  = latestFile(outputDir, 'migration_map_');
+      const usaFile  = latestFile(outputDir, 'usa_backup_');
+      const euFile   = latestFile(outputDir, 'eu_inventory_');
+      const map      = JSON.parse(readFileSync(mapFile, 'utf8'));
+      const timestamp = mapFile.match(/(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})/)?.[1]?.replace('T', ' ').replace(/-/g, (m, o) => o > 10 ? ':' : '-') ?? '';
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ map, timestamp, mapFile, usaFile, euFile }));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
 
   // ── POST /api/confirm-match ──────────────────────────────────────────────
   if (url.pathname === '/api/confirm-match' && req.method === 'POST') {
