@@ -526,7 +526,7 @@
         <path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
         <path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
       </svg>
-      Refresh data
+      Refresh sync
     </button>
   </div>
 </div>
@@ -934,34 +934,67 @@ async function resync() {
   const btn = document.getElementById('resync-btn');
   if (!btn || btn.disabled) return;
 
+  let pat = localStorage.getItem('gh_sync_pat');
+  if (!pat) {
+    pat = prompt('Introduce un GitHub Personal Access Token con permiso Actions (write) para este repo.\n\nCréalo en: GitHub → Settings → Developer settings → Fine-grained tokens');
+    if (!pat) return;
+    localStorage.setItem('gh_sync_pat', pat.trim());
+    pat = pat.trim();
+  }
+
+  const oldTimestamp = allData?.timestamp ?? '';
   btn.disabled = true;
   btn.classList.add('syncing');
-  btn.innerHTML = `
-    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-      <path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
-      <path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
-    </svg>
-    Refreshing...`;
+  const icon = `<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>`;
 
   try {
-    const res = await fetch('data.json?' + Date.now());
-    const json = await res.json();
-    const map = json.map ?? json;
-    const timestamp = json.timestamp ?? 'unknown';
-    allData = { map, timestamp };
-    document.getElementById('ts').textContent = `Last sync: ${timestamp}`;
-    render();
+    btn.innerHTML = `${icon} Triggering...`;
+    const res = await fetch('https://api.github.com/repos/UrbanaLaura/elevenlabs-sync/actions/workflows/sync.yml/dispatches', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${pat}`,
+        'Accept': 'application/vnd.github.v3+json',
+      },
+      body: JSON.stringify({ ref: 'main' }),
+    });
+
+    if (res.status === 401 || res.status === 403) {
+      localStorage.removeItem('gh_sync_pat');
+      throw new Error('Token inválido o sin permisos. Recarga e inténtalo de nuevo.');
+    }
+    if (res.status !== 204) {
+      throw new Error(`GitHub API: ${res.status}`);
+    }
+
+    btn.innerHTML = `${icon} Syncing...`;
+
+    // Poll for new data (max 3 min, every 15s)
+    let updated = false;
+    for (let i = 0; i < 12; i++) {
+      await new Promise(r => setTimeout(r, 15000));
+      try {
+        const d = await fetch('data.json?_=' + Date.now(), { cache: 'no-store' });
+        const j = await d.json();
+        const newTs = j.timestamp ?? '';
+        if (newTs && newTs !== oldTimestamp) {
+          allData = { map: j.map ?? j, timestamp: newTs };
+          document.getElementById('ts').textContent = `Last sync: ${newTs}`;
+          render();
+          updated = true;
+          break;
+        }
+      } catch {}
+    }
+
+    if (!updated) {
+      alert('Sync disparado. Los datos se actualizarán en unos minutos. Recarga la página después.');
+    }
   } catch (e) {
-    alert('Error refreshing: ' + e.message);
+    alert('Error: ' + e.message);
   } finally {
     btn.disabled = false;
     btn.classList.remove('syncing');
-    btn.innerHTML = `
-      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-        <path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
-        <path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
-      </svg>
-      Refresh data`;
+    btn.innerHTML = `${icon} Refresh sync`;
   }
 }
 

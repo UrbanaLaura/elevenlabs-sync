@@ -1,0 +1,47 @@
+name: Sync ElevenLabs
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Create .env
+        env:
+          USA_KEY: ${{ secrets.ELEVENLABS_USA_KEY }}
+          USA_URL: ${{ secrets.ELEVENLABS_USA_URL }}
+          EU_KEY: ${{ secrets.ELEVENLABS_EU_KEY }}
+          EU_URL: ${{ secrets.ELEVENLABS_EU_URL }}
+        run: |
+          echo "ELEVENLABS_USA_KEY=${USA_KEY}" > .env
+          echo "ELEVENLABS_USA_URL=${USA_URL}" >> .env
+          echo "ELEVENLABS_EU_KEY=${EU_KEY}" >> .env
+          echo "ELEVENLABS_EU_URL=${EU_URL}" >> .env
+
+      - name: Run sync
+        run: node sync.js
+
+      - name: Update docs/data.json
+        run: |
+          LATEST_MAP=$(ls -t output/migration_map_*.json | head -1)
+          RAW_TS=$(basename "$LATEST_MAP" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}')
+          TIMESTAMP=$(echo "$RAW_TS" | sed 's/T/ /;s/-\([0-9][0-9]\)-\([0-9][0-9]\)$/:\1:\2/')
+          jq -n --argjson map "$(cat "$LATEST_MAP")" --arg ts "$TIMESTAMP" '{map: $map, timestamp: $ts}' > docs/data.json
+          echo "Updated docs/data.json with timestamp: $TIMESTAMP"
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/data.json
+          git diff --cached --quiet || (git commit -m "Update sync data via GitHub Actions" && git push)
