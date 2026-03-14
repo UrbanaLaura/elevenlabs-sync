@@ -377,6 +377,99 @@
     transition: border-color .15s, color .15s;
   }
   .expand-all-btn:hover { border-color: var(--blue); color: var(--blue); }
+
+  /* ── Migration queue split layout ── */
+  .migration-layout {
+    display: grid;
+    grid-template-columns: 1fr 360px;
+    gap: 20px;
+    align-items: start;
+  }
+  .migration-queue-panel {
+    position: sticky;
+    top: 90px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .mq-header {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .mq-header h3 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .mq-header .mq-count {
+    font-size: 11px;
+    color: var(--red);
+    background: var(--red-bg);
+    border-radius: 12px;
+    padding: 2px 10px;
+    font-weight: 600;
+  }
+  .mq-actions {
+    display: flex;
+    gap: 8px;
+    padding: 10px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .mq-copy-btn, .mq-clear-btn {
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 6px;
+    padding: 5px 12px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text-muted);
+    transition: border-color .15s, color .15s;
+  }
+  .mq-copy-btn:hover { border-color: var(--blue); color: var(--blue); }
+  .mq-clear-btn:hover { border-color: var(--red); color: var(--red); }
+  .mq-copy-btn.copied { border-color: var(--green); color: var(--green); }
+  .mq-ids {
+    padding: 14px 18px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    line-height: 1.8;
+    color: var(--text-dim);
+    max-height: 60vh;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    white-space: pre-wrap;
+    word-break: break-all;
+    user-select: all;
+  }
+  .mq-empty {
+    padding: 32px 18px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+  .mark-migrate-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 7px;
+    padding: 5px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color .15s, color .15s, background .15s;
+    white-space: nowrap;
+  }
+  .mark-migrate-btn:hover { border-color: var(--red); color: var(--red); }
+  .mark-migrate-btn.queued {
+    background: var(--red-bg);
+    border-color: var(--red);
+    color: var(--red);
+  }
 </style>
 </head>
 <body>
@@ -399,6 +492,7 @@
 let allData = null;
 let activeFilter = 'all';
 let searchQuery = '';
+const migrationQueue = new Set();
 
 // ── Fetch data (static GitHub Pages version) ────────────────────────────────
 async function init() {
@@ -499,7 +593,12 @@ function render() {
       <button class="expand-all-btn" onclick="toggleAll()">Expand all</button>
       <div class="count-badge">${filtered.length} agents</div>
     </div>
-    <div id="agent-list">${renderList(filtered)}</div>
+    ${hasMissingVisible(filtered) ? `
+    <div class="migration-layout">
+      <div id="agent-list">${renderList(filtered)}</div>
+      ${renderMigrationQueue()}
+    </div>` : `
+    <div id="agent-list">${renderList(filtered)}</div>`}
   `;
 }
 
@@ -517,6 +616,31 @@ function renderStats(counts) {
       <div class="stat-number">${counts[s.key]}</div>
       <div class="stat-sub">${s.sub}</div>
     </div>`).join('')}</div>`;
+}
+
+function hasMissingVisible(rows) {
+  return rows.some(r => r.status === 'NOT_MIGRATED');
+}
+
+function renderMigrationQueue() {
+  const queuedItems = [...migrationQueue];
+  const rows = allData?.map?.usa_to_eu ?? [];
+  const queuedRows = queuedItems.map(id => rows.find(r => r.usa_agent_id === id)).filter(Boolean);
+
+  return `
+  <div class="migration-queue-panel">
+    <div class="mq-header">
+      <h3>Pendientes de migrar</h3>
+      ${queuedItems.length ? `<span class="mq-count">${queuedItems.length}</span>` : ''}
+    </div>
+    ${queuedItems.length ? `
+    <div class="mq-actions">
+      <button class="mq-copy-btn" onclick="copyQueue(this)">Copiar IDs</button>
+      <button class="mq-clear-btn" onclick="clearQueue()">Limpiar</button>
+    </div>
+    <div class="mq-ids">${queuedRows.map(r => escHtml(r.usa_agent_id)).join('\n')}</div>
+    ` : `<div class="mq-empty">Marca agentes para añadirlos a la lista de migración</div>`}
+  </div>`;
 }
 
 function renderList(rows) {
@@ -545,6 +669,7 @@ function renderCard(row, i) {
   }
 
   if (row.status === 'NOT_MIGRATED') {
+    const isQueued = migrationQueue.has(row.usa_agent_id);
     return `
     <div class="agent-card status-missing">
       <div class="card-header">
@@ -553,6 +678,9 @@ function renderCard(row, i) {
           <div class="card-name-usa">${escHtml(row.usa_name)}</div>
           <div class="card-name-eu">Not found in EU workspace</div>
         </div>
+        <button class="mark-migrate-btn ${isQueued ? 'queued' : ''}" onclick="toggleMigrate('${escHtml(row.usa_agent_id)}')">
+          ${isQueued ? '✓ Marcado' : 'Marcar pendiente'}
+        </button>
         <span class="badge">${meta.badge}</span>
       </div>
       <div class="ids-row">
@@ -705,6 +833,33 @@ function onSearch(val) {
 }
 
 // confirmMatch disabled in static version (needs backend)
+
+function toggleMigrate(agentId) {
+  if (migrationQueue.has(agentId)) {
+    migrationQueue.delete(agentId);
+  } else {
+    migrationQueue.add(agentId);
+  }
+  render();
+}
+
+function copyQueue(btn) {
+  const rows = allData?.map?.usa_to_eu ?? [];
+  const ids = [...migrationQueue].map(id => {
+    const r = rows.find(r => r.usa_agent_id === id);
+    return r ? r.usa_agent_id : id;
+  }).join('\n');
+  navigator.clipboard.writeText(ids).then(() => {
+    btn.classList.add('copied');
+    btn.textContent = 'Copiado!';
+    setTimeout(() => { btn.classList.remove('copied'); btn.textContent = 'Copiar IDs'; }, 1500);
+  });
+}
+
+function clearQueue() {
+  migrationQueue.clear();
+  render();
+}
 
 init();
 </script>
