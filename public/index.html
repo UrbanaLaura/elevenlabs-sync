@@ -491,6 +491,28 @@
     border-color: var(--red);
     color: var(--red);
   }
+  .mark-reviewed-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 7px;
+    padding: 5px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color .15s, color .15s, background .15s;
+    white-space: nowrap;
+  }
+  .mark-reviewed-btn:hover { border-color: var(--green); color: var(--green); }
+  .reviewed-tag {
+    font-size: 10px;
+    color: var(--green);
+    background: var(--green-bg);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-weight: 600;
+    letter-spacing: .3px;
+  }
 </style>
 </head>
 <body>
@@ -523,6 +545,7 @@ let allData = null;
 let activeFilter = 'all';
 let searchQuery = '';
 const migrationQueue = new Set();
+const reviewedSet = new Set(JSON.parse(localStorage.getItem('reviewedAgents') || '[]'));
 
 // ── Fetch data ────────────────────────────────────────────────────────────────
 async function init() {
@@ -563,7 +586,12 @@ function escHtml(s) {
 function buildRows() {
   const { usa_to_eu, eu_only } = allData.map;
   const rows = [
-    ...usa_to_eu,
+    ...usa_to_eu.map(r => {
+      if (r.status === 'MIGRATED_WITH_DIFFS' && reviewedSet.has(r.usa_agent_id)) {
+        return { ...r, status: 'MIGRATED_IDENTICAL', _reviewed: true };
+      }
+      return r;
+    }),
     ...eu_only.map(a => ({ status: 'EU_ONLY', eu_name: a.name, eu_agent_id: a.agent_id })),
   ];
   return rows;
@@ -728,6 +756,9 @@ function renderCard(row, i) {
     ? `<div class="diff-count"><b>${row.diffs.length}</b> diff${row.diffs.length !== 1 ? 's' : ''}</div>`
     : '';
 
+  const reviewedTag = row._reviewed ? `<span class="reviewed-tag">revisado manualmente</span>` : '';
+  const reviewedBtn = row.status === 'MIGRATED_WITH_DIFFS' ? `<button class="mark-reviewed-btn" onclick="event.stopPropagation(); markReviewed('${escHtml(row.usa_agent_id)}')">Revisado, marcar OK</button>` : '';
+
   const euNameLine = row.eu_name !== row.usa_name
     ? `<div class="card-name-eu">EU: ${escHtml(row.eu_name)}</div>`
     : `<div class="card-name-eu" style="color:var(--green);font-size:11px;">Name matches</div>`;
@@ -742,6 +773,8 @@ function renderCard(row, i) {
       </div>
       ${simBar}
       ${diffCountEl}
+      ${reviewedTag}
+      ${reviewedBtn}
       <span class="badge">${meta.badge}</span>
       <svg class="chevron" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
         <path d="m6 9 6 6 6-6"/>
@@ -898,6 +931,12 @@ function toggleMigrate(agentId) {
   } else {
     migrationQueue.add(agentId);
   }
+  render();
+}
+
+function markReviewed(agentId) {
+  reviewedSet.add(agentId);
+  localStorage.setItem('reviewedAgents', JSON.stringify([...reviewedSet]));
   render();
 }
 
